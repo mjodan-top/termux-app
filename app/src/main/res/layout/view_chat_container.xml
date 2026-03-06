@@ -1,0 +1,71 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/chat_container"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:background="#FF000000">
+
+    <!-- Status bar -->
+    <TextView
+        android:id="@+id/chat_status_text"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:background="#FF333333"
+        android:paddingHorizontal="8dp"
+        android:paddingVertical="6dp"
+        android:text="Terminal Chat"
+        android:textColor="#FF81C784"
+        android:textSize="13sp"
+        android:singleLine="true"
+        android:ellipsize="end" />
+
+    <!-- Message list -->
+    <androidx.recyclerview.widget.RecyclerView
+        android:id="@+id/chat_message_list"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:clipToPadding="false"
+        android:padding="4dp"
+        android:scrollbars="vertical" />
+
+    <!-- Input area -->
+    <LinearLayout
+        android:id="@+id/chat_input_area"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:background="#FF222222"
+        android:gravity="center_vertical"
+        android:paddingHorizontal="4dp"
+        android:paddingVertical="4dp">
+
+        <EditText
+            android:id="@+id/chat_input_edittext"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:hint="Type a command..."
+            android:textColor="#FFFFFFFF"
+            android:textColorHint="#FF888888"
+            android:textSize="14sp"
+            android:background="#FF333333"
+            android:padding="8dp"
+            android:maxLines="4"
+            android:inputType="textMultiLine"
+            android:imeOptions="actionNone" />
+
+        <ImageButton
+            android:id="@+id/chat_send_button"
+            android:layout_width="44dp"
+            android:layout_height="44dp"
+            android:layout_marginStart="4dp"
+            android:background="@null"
+            android:contentDescription="Send"
+            android:src="@android:drawable/ic_menu_send"
+            android:scaleType="centerInside" />
+
+    </LinearLayout>
+
+</LinearLayout>

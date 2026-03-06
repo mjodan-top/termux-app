@@ -175,6 +175,9 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
 
     private float mTerminalToolbarDefaultHeight;
 
+    /** The command input EditText. */
+    private EditText mCommandInput;
+
 
     private static final int CONTEXT_MENU_SELECT_URL_ID = 0;
     private static final int CONTEXT_MENU_SHARE_TRANSCRIPT_ID = 1;
@@ -250,6 +253,8 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
         setNewSessionButtonView();
 
         setToggleKeyboardView();
+
+        initCommandInputBar();
 
         registerForContextMenu(mTerminalView);
 
@@ -594,8 +599,23 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
         });
     }
 
+    private void initCommandInputBar() {
+        mCommandInput = findViewById(R.id.chat_input_edittext);
+        ImageButton sendButton = findViewById(R.id.chat_send_button);
 
+        sendButton.setOnClickListener(v -> {
+            String text = mCommandInput.getText().toString().trim();
+            if (text.isEmpty()) return;
 
+            TerminalSession session = getCurrentSession();
+            if (session != null) {
+                session.write(text + "\r");
+                mCommandInput.setText("");
+            } else {
+                Toast.makeText(TermuxActivity.this, "No active terminal session", Toast.LENGTH_SHORT).show();
+            }
+        });
+    }
 
 
     @SuppressLint("RtlHardcoded")
