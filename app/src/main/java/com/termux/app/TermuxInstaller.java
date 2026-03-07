@@ -218,6 +218,9 @@ final class TermuxInstaller {
 
                     Logger.logInfo(LOG_TAG, "Bootstrap packages installed successfully.");
 
+                    // Write auto-install script to home directory
+                    writeAutoInstallProfile();
+
                     // Recreate env file since termux prefix was wiped earlier
                     TermuxShellEnvironment.writeEnvironmentToFile(activity);
 
@@ -369,6 +372,40 @@ final class TermuxInstaller {
                 }
             }
         }.start();
+    }
+
+    private static void writeAutoInstallProfile() {
+        try {
+            File homeDir = new File(TermuxConstants.TERMUX_HOME_DIR_PATH);
+            if (!homeDir.exists()) homeDir.mkdirs();
+
+            File profileFile = new File(homeDir, ".profile");
+            if (!profileFile.exists()) {
+                String script =
+                    "# Auto-install essential packages on first login\n" +
+                    "MARKER=\"$HOME/.termux/.packages-installed\"\n" +
+                    "if [ ! -f \"$MARKER\" ]; then\n" +
+                    "    echo \"[Termux] Installing essential packages (mosh, openssh)...\"\n" +
+                    "    pkg install -y mosh openssh > /dev/null 2>&1\n" +
+                    "    if [ $? -eq 0 ]; then\n" +
+                    "        mkdir -p \"$HOME/.termux\"\n" +
+                    "        touch \"$MARKER\"\n" +
+                    "        echo \"[Termux] Done.\"\n" +
+                    "    else\n" +
+                    "        echo \"[Termux] Package install failed. Run manually: pkg install mosh openssh\"\n" +
+                    "    fi\n" +
+                    "fi\n" +
+                    "mssh() {\n" +
+                    "    mosh \"$@\" -- tmux attach-session 2>/dev/null || mosh \"$@\" -- tmux new-session\n" +
+                    "}\n";
+                try (FileOutputStream fos = new FileOutputStream(profileFile)) {
+                    fos.write(script.getBytes());
+                }
+                Logger.logInfo(LOG_TAG, "Wrote auto-install profile to " + profileFile.getAbsolutePath());
+            }
+        } catch (Exception e) {
+            Logger.logStackTraceWithMessage(LOG_TAG, "Failed to write auto-install profile", e);
+        }
     }
 
     private static Error ensureDirectoryExists(File directory) {

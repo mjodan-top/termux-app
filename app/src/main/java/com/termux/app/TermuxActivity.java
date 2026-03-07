@@ -191,7 +191,7 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
     private static final int CONTEXT_MENU_HELP_ID = 7;
     private static final int CONTEXT_MENU_SETTINGS_ID = 8;
     private static final int CONTEXT_MENU_REPORT_ID = 9;
-    private static final int CONTEXT_MENU_RENAME_SESSION_ID = 10;
+    private static final int CONTEXT_MENU_RENAME_SESSION_ID = 14;
     private static final int CONTEXT_MENU_BACKUP_ID = 12;
     private static final int CONTEXT_MENU_RESTORE_ID = 13;
 
