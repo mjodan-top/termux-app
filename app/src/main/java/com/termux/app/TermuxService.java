@@ -119,6 +119,9 @@ public final class TermuxService extends Service implements AppShell.AppShellCli
 
         runStartForeground();
 
+        // Auto-acquire WakeLock to prevent background disconnections
+        actionAcquireWakeLock();
+
         SystemEventReceiver.registerPackageUpdateEvents(this);
     }
 

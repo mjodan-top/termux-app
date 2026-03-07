@@ -191,6 +191,7 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
     private static final int CONTEXT_MENU_HELP_ID = 7;
     private static final int CONTEXT_MENU_SETTINGS_ID = 8;
     private static final int CONTEXT_MENU_REPORT_ID = 9;
+    private static final int CONTEXT_MENU_RENAME_SESSION_ID = 10;
     private static final int CONTEXT_MENU_BACKUP_ID = 12;
     private static final int CONTEXT_MENU_RESTORE_ID = 13;
 
@@ -657,6 +658,7 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
         menu.add(Menu.NONE, CONTEXT_MENU_SHARE_TRANSCRIPT_ID, Menu.NONE, R.string.action_share_transcript);
         if (!DataUtils.isNullOrEmpty(mTerminalView.getStoredSelectedText()))
             menu.add(Menu.NONE, CONTEXT_MENU_SHARE_SELECTED_TEXT, Menu.NONE, R.string.action_share_selected_text);
+        menu.add(Menu.NONE, CONTEXT_MENU_RENAME_SESSION_ID, Menu.NONE, "Rename session");
         menu.add(Menu.NONE, CONTEXT_MENU_RESET_TERMINAL_ID, Menu.NONE, R.string.action_reset_terminal);
         menu.add(Menu.NONE, CONTEXT_MENU_KILL_PROCESS_ID, Menu.NONE, getResources().getString(R.string.action_kill_process, getCurrentSession().getPid())).setEnabled(currentSession.isRunning());
         menu.add(Menu.NONE, CONTEXT_MENU_TOGGLE_KEEP_SCREEN_ON, Menu.NONE, R.string.action_toggle_keep_screen_on).setCheckable(true).setChecked(mPreferences.shouldKeepScreenOn());
@@ -687,6 +689,9 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
                 mTermuxTerminalViewClient.shareSelectedText();
                 return true;
 
+            case CONTEXT_MENU_RENAME_SESSION_ID:
+                mTermuxTerminalSessionActivityClient.renameSession(session);
+                return true;
             case CONTEXT_MENU_RESET_TERMINAL_ID:
                 if (session != null) {
                     // Send SSH escape sequence ~. to disconnect SSH session
