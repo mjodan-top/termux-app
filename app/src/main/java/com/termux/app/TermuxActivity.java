@@ -737,6 +737,7 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
         b.setPositiveButton(android.R.string.yes, (dialog, id) -> {
             dialog.dismiss();
             session.finishIfRunning();
+            mTermuxTerminalSessionActivityClient.removeFinishedSession(session);
         });
         b.setNegativeButton(android.R.string.no, null);
         b.show();
