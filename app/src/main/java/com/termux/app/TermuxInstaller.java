@@ -382,22 +382,24 @@ final class TermuxInstaller {
             File profileFile = new File(homeDir, ".profile");
             if (!profileFile.exists()) {
                 String script =
-                    "# Auto-install essential packages on first login\n" +
+                    "# Auto-install openssh and configure SSH keepalive on first login\n" +
                     "MARKER=\"$HOME/.termux/.packages-installed\"\n" +
                     "if [ ! -f \"$MARKER\" ]; then\n" +
-                    "    echo \"[Termux] Installing essential packages (mosh, openssh)...\"\n" +
-                    "    pkg install -y mosh openssh > /dev/null 2>&1\n" +
+                    "    echo \"[Termux] Installing openssh...\"\n" +
+                    "    pkg install -y openssh > /dev/null 2>&1\n" +
                     "    if [ $? -eq 0 ]; then\n" +
-                    "        mkdir -p \"$HOME/.termux\"\n" +
+                    "        mkdir -p \"$HOME/.termux\" \"$HOME/.ssh\"\n" +
                     "        touch \"$MARKER\"\n" +
+                    "        # Configure SSH keepalive to prevent disconnections\n" +
+                    "        if [ ! -f \"$HOME/.ssh/config\" ]; then\n" +
+                    "            printf 'Host *\\n    ServerAliveInterval 15\\n    ServerAliveCountMax 6\\n    TCPKeepAlive yes\\n' > \"$HOME/.ssh/config\"\n" +
+                    "            chmod 600 \"$HOME/.ssh/config\"\n" +
+                    "        fi\n" +
                     "        echo \"[Termux] Done.\"\n" +
                     "    else\n" +
-                    "        echo \"[Termux] Package install failed. Run manually: pkg install mosh openssh\"\n" +
+                    "        echo \"[Termux] Package install failed. Run manually: pkg install openssh\"\n" +
                     "    fi\n" +
-                    "fi\n" +
-                    "mssh() {\n" +
-                    "    mosh \"$@\" -- tmux attach-session 2>/dev/null || mosh \"$@\" -- tmux new-session\n" +
-                    "}\n";
+                    "fi\n";
                 try (FileOutputStream fos = new FileOutputStream(profileFile)) {
                     fos.write(script.getBytes());
                 }
