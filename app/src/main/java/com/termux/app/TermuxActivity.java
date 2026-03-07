@@ -191,6 +191,8 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
     private static final int CONTEXT_MENU_HELP_ID = 7;
     private static final int CONTEXT_MENU_SETTINGS_ID = 8;
     private static final int CONTEXT_MENU_REPORT_ID = 9;
+    private static final int CONTEXT_MENU_BACKUP_ID = 12;
+    private static final int CONTEXT_MENU_RESTORE_ID = 13;
 
     private static final String ARG_TERMINAL_TOOLBAR_TEXT_INPUT = "terminal_toolbar_text_input";
     private static final String ARG_ACTIVITY_RECREATED = "activity_recreated";
@@ -651,23 +653,16 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
         TerminalSession currentSession = getCurrentSession();
         if (currentSession == null) return;
 
-        boolean autoFillEnabled = mTerminalView.isAutoFillEnabled();
-
         menu.add(Menu.NONE, CONTEXT_MENU_SELECT_URL_ID, Menu.NONE, R.string.action_select_url);
         menu.add(Menu.NONE, CONTEXT_MENU_SHARE_TRANSCRIPT_ID, Menu.NONE, R.string.action_share_transcript);
         if (!DataUtils.isNullOrEmpty(mTerminalView.getStoredSelectedText()))
             menu.add(Menu.NONE, CONTEXT_MENU_SHARE_SELECTED_TEXT, Menu.NONE, R.string.action_share_selected_text);
-        if (autoFillEnabled)
-            menu.add(Menu.NONE, CONTEXT_MENU_AUTOFILL_USERNAME, Menu.NONE, R.string.action_autofill_username);
-        if (autoFillEnabled)
-            menu.add(Menu.NONE, CONTEXT_MENU_AUTOFILL_PASSWORD, Menu.NONE, R.string.action_autofill_password);
         menu.add(Menu.NONE, CONTEXT_MENU_RESET_TERMINAL_ID, Menu.NONE, R.string.action_reset_terminal);
         menu.add(Menu.NONE, CONTEXT_MENU_KILL_PROCESS_ID, Menu.NONE, getResources().getString(R.string.action_kill_process, getCurrentSession().getPid())).setEnabled(currentSession.isRunning());
-        menu.add(Menu.NONE, CONTEXT_MENU_STYLING_ID, Menu.NONE, R.string.action_style_terminal);
         menu.add(Menu.NONE, CONTEXT_MENU_TOGGLE_KEEP_SCREEN_ON, Menu.NONE, R.string.action_toggle_keep_screen_on).setCheckable(true).setChecked(mPreferences.shouldKeepScreenOn());
-        menu.add(Menu.NONE, CONTEXT_MENU_HELP_ID, Menu.NONE, R.string.action_open_help);
+        menu.add(Menu.NONE, CONTEXT_MENU_BACKUP_ID, Menu.NONE, "Backup");
+        menu.add(Menu.NONE, CONTEXT_MENU_RESTORE_ID, Menu.NONE, "Restore");
         menu.add(Menu.NONE, CONTEXT_MENU_SETTINGS_ID, Menu.NONE, R.string.action_open_settings);
-        menu.add(Menu.NONE, CONTEXT_MENU_REPORT_ID, Menu.NONE, R.string.action_report_issue);
     }
 
     /** Hook system menu to show context menu instead. */
@@ -691,32 +686,30 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
             case CONTEXT_MENU_SHARE_SELECTED_TEXT:
                 mTermuxTerminalViewClient.shareSelectedText();
                 return true;
-            case CONTEXT_MENU_AUTOFILL_USERNAME:
-                mTerminalView.requestAutoFillUsername();
-                return true;
-            case CONTEXT_MENU_AUTOFILL_PASSWORD:
-                mTerminalView.requestAutoFillPassword();
-                return true;
+
             case CONTEXT_MENU_RESET_TERMINAL_ID:
-                onResetTerminalSession(session);
+                if (session != null) {
+                    // Send SSH escape sequence ~. to disconnect SSH session
+                    // The ~ escape is only recognized after a newline
+                    session.write("\r~.");
+                }
                 return true;
             case CONTEXT_MENU_KILL_PROCESS_ID:
                 showKillSessionDialog(session);
                 return true;
-            case CONTEXT_MENU_STYLING_ID:
-                showStylingDialog();
-                return true;
+
             case CONTEXT_MENU_TOGGLE_KEEP_SCREEN_ON:
                 toggleKeepScreenOn();
                 return true;
-            case CONTEXT_MENU_HELP_ID:
-                ActivityUtils.startActivity(this, new Intent(this, HelpActivity.class));
+
+            case CONTEXT_MENU_BACKUP_ID:
+                performBackup();
+                return true;
+            case CONTEXT_MENU_RESTORE_ID:
+                performRestore();
                 return true;
             case CONTEXT_MENU_SETTINGS_ID:
                 ActivityUtils.startActivity(this, new Intent(this, SettingsActivity.class));
-                return true;
-            case CONTEXT_MENU_REPORT_ID:
-                mTermuxTerminalViewClient.reportIssueFromTranscript();
                 return true;
             default:
                 return super.onContextItemSelected(item);
@@ -768,6 +761,43 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
                 .setNegativeButton(android.R.string.cancel, null).show();
         }
     }
+    private static final String BACKUP_DIR = "/sdcard/termux-backup";
+
+    private void performBackup() {
+        TerminalSession session = getCurrentSession();
+        if (session == null) return;
+
+        String script =
+            "mkdir -p " + BACKUP_DIR + " && " +
+            "tar czf " + BACKUP_DIR + "/home.tar.gz -C /data/data/com.termux/files home && " +
+            "dpkg --get-selections > " + BACKUP_DIR + "/packages.txt && " +
+            "echo '[Backup] Done => " + BACKUP_DIR + "/'";
+        session.write(script + "\r");
+    }
+
+    private void performRestore() {
+        TerminalSession session = getCurrentSession();
+        if (session == null) return;
+
+        new AlertDialog.Builder(this)
+            .setTitle("Restore")
+            .setMessage("Restore from /sdcard/termux-backup/ ? This will overwrite current configs.")
+            .setPositiveButton(android.R.string.yes, (dialog, which) -> {
+                String script =
+                    "if [ -f " + BACKUP_DIR + "/home.tar.gz ]; then " +
+                    "tar xzf " + BACKUP_DIR + "/home.tar.gz -C /data/data/com.termux/files && " +
+                    "echo '[Restore] Home restored.'; fi && " +
+                    "if [ -f " + BACKUP_DIR + "/packages.txt ]; then " +
+                    "dpkg --set-selections < " + BACKUP_DIR + "/packages.txt && " +
+                    "apt-get -y dselect-upgrade > /dev/null 2>&1 && " +
+                    "echo '[Restore] Packages restored.'; fi && " +
+                    "echo '[Restore] Done.'";
+                session.write(script + "\r");
+            })
+            .setNegativeButton(android.R.string.no, null)
+            .show();
+    }
+
     private void toggleKeepScreenOn() {
         if (mTerminalView.getKeepScreenOn()) {
             mTerminalView.setKeepScreenOn(false);
