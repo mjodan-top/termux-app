@@ -399,7 +399,22 @@ final class TermuxInstaller {
                     "    else\n" +
                     "        echo \"[Termux] Package install failed. Run manually: pkg install openssh\"\n" +
                     "    fi\n" +
-                    "fi\n";
+                    "fi\n" +
+                    "\n# ts - SSH + auto tmux attach, saves last connection for quick reconnect\n" +
+                    "# Usage: ts user@host [-p port]  or just 'ts' to reconnect last server\n" +
+                    "ts() {\n" +
+                    "    local LAST=\"$HOME/.termux/.last-ssh\"\n" +
+                    "    if [ $# -gt 0 ]; then\n" +
+                    "        echo \"$*\" > \"$LAST\"\n" +
+                    "    elif [ -f \"$LAST\" ]; then\n" +
+                    "        set -- $(cat \"$LAST\")\n" +
+                    "    else\n" +
+                    "        echo \"Usage: ts [user@]host [-p port] [ssh-options]\"\n" +
+                    "        echo \"       ts              (reconnect last server)\"\n" +
+                    "        return 1\n" +
+                    "    fi\n" +
+                    "    ssh \"$@\" -t 'tmux attach || tmux new'\n" +
+                    "}\n";
                 try (FileOutputStream fos = new FileOutputStream(profileFile)) {
                     fos.write(script.getBytes());
                 }

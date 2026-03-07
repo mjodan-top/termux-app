@@ -192,6 +192,7 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
     private static final int CONTEXT_MENU_SETTINGS_ID = 8;
     private static final int CONTEXT_MENU_REPORT_ID = 9;
     private static final int CONTEXT_MENU_RENAME_SESSION_ID = 14;
+    private static final int CONTEXT_MENU_RECONNECT_ID = 15;
     private static final int CONTEXT_MENU_BACKUP_ID = 12;
     private static final int CONTEXT_MENU_RESTORE_ID = 13;
 
@@ -658,6 +659,7 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
         menu.add(Menu.NONE, CONTEXT_MENU_SHARE_TRANSCRIPT_ID, Menu.NONE, R.string.action_share_transcript);
         if (!DataUtils.isNullOrEmpty(mTerminalView.getStoredSelectedText()))
             menu.add(Menu.NONE, CONTEXT_MENU_SHARE_SELECTED_TEXT, Menu.NONE, R.string.action_share_selected_text);
+        menu.add(Menu.NONE, CONTEXT_MENU_RECONNECT_ID, Menu.NONE, "Reconnect SSH");
         menu.add(Menu.NONE, CONTEXT_MENU_RENAME_SESSION_ID, Menu.NONE, "Rename session");
         menu.add(Menu.NONE, CONTEXT_MENU_RESET_TERMINAL_ID, Menu.NONE, R.string.action_reset_terminal);
         menu.add(Menu.NONE, CONTEXT_MENU_KILL_PROCESS_ID, Menu.NONE, getResources().getString(R.string.action_kill_process, getCurrentSession().getPid())).setEnabled(currentSession.isRunning());
@@ -689,6 +691,12 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
                 mTermuxTerminalViewClient.shareSelectedText();
                 return true;
 
+            case CONTEXT_MENU_RECONNECT_ID:
+                if (session != null) {
+                    // Run ts function to reconnect last SSH + tmux
+                    session.write("ts\r");
+                }
+                return true;
             case CONTEXT_MENU_RENAME_SESSION_ID:
                 mTermuxTerminalSessionActivityClient.renameSession(session);
                 return true;
