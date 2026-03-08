@@ -122,7 +122,7 @@ public final class TermuxPreferenceConstants {
          * Defines the key for whether to always keep screen on.
          */
         public static final String KEY_KEEP_SCREEN_ON = "screen_always_on";
-        public static final boolean DEFAULT_VALUE_KEEP_SCREEN_ON = true;
+        public static final boolean DEFAULT_VALUE_KEEP_SCREEN_ON = false;
 
 
         /**
