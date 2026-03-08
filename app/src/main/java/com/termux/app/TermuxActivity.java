@@ -620,6 +620,7 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
         if (session != null) {
             session.write(text + "\r");
             mCommandInput.setText("");
+            mTerminalView.requestFocus();
         } else {
             Toast.makeText(TermuxActivity.this, "No active terminal session", Toast.LENGTH_SHORT).show();
         }

@@ -75,6 +75,7 @@ public class TerminalToolbarViewPager {
                             mActivity.getTermuxTerminalSessionClient().removeFinishedSession(session);
                         }
                         editText.setText("");
+                        mActivity.getTerminalView().requestFocus();
                     }
                     return true;
                 });
