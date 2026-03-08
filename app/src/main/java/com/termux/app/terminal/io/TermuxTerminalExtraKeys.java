@@ -1,8 +1,11 @@
 package com.termux.app.terminal.io;
 
 import android.annotation.SuppressLint;
+import android.os.SystemClock;
 import android.view.Gravity;
+import android.view.KeyEvent;
 import android.view.View;
+import android.widget.EditText;
 
 import androidx.annotation.NonNull;
 import androidx.drawerlayout.widget.DrawerLayout;
@@ -20,6 +23,8 @@ import com.termux.view.TerminalView;
 
 import org.json.JSONException;
 
+import static com.termux.shared.termux.extrakeys.ExtraKeysConstants.PRIMARY_KEY_CODES_FOR_STRINGS;
+
 public class TermuxTerminalExtraKeys extends TerminalExtraKeys {
 
     private ExtraKeysInfo mExtraKeysInfo;
@@ -27,6 +32,10 @@ public class TermuxTerminalExtraKeys extends TerminalExtraKeys {
     final TermuxActivity mActivity;
     final TermuxTerminalViewClient mTermuxTerminalViewClient;
     final TermuxTerminalSessionActivityClient mTermuxTerminalSessionActivityClient;
+
+    /** Timestamp when command input lost focus, used to detect extra key button stealing focus. */
+    private long mCommandInputFocusLostTime = 0;
+    private static final long FOCUS_LOST_THRESHOLD_MS = 300;
 
     private static final String LOG_TAG = "TermuxTerminalExtraKeys";
 
@@ -40,8 +49,19 @@ public class TermuxTerminalExtraKeys extends TerminalExtraKeys {
         mTermuxTerminalSessionActivityClient = termuxTerminalSessionActivityClient;
 
         setExtraKeys();
+        setupCommandInputFocusTracking();
     }
 
+    private void setupCommandInputFocusTracking() {
+        EditText commandInput = mActivity.getCommandInput();
+        if (commandInput != null) {
+            commandInput.setOnFocusChangeListener((v, hasFocus) -> {
+                if (!hasFocus) {
+                    mCommandInputFocusLostTime = SystemClock.elapsedRealtime();
+                }
+            });
+        }
+    }
 
     /**
      * Set the terminal extra keys and style.
@@ -50,9 +70,6 @@ public class TermuxTerminalExtraKeys extends TerminalExtraKeys {
         mExtraKeysInfo = null;
 
         try {
-            // The mMap stores the extra key and style string values while loading properties
-            // Check {@link #getExtraKeysInternalPropertyValueFromValue(String)} and
-            // {@link #getExtraKeysStyleInternalPropertyValueFromValue(String)}
             String extrakeys = (String) mActivity.getProperties().getInternalPropertyValue(TermuxPropertyConstants.KEY_EXTRA_KEYS, true);
             String extraKeysStyle = (String) mActivity.getProperties().getInternalPropertyValue(TermuxPropertyConstants.KEY_EXTRA_KEYS_STYLE, true);
 
@@ -81,6 +98,56 @@ public class TermuxTerminalExtraKeys extends TerminalExtraKeys {
         return mExtraKeysInfo;
     }
 
+    /**
+     * Check if the command input EditText had focus recently
+     * (extra key button click steals focus, so we use a time threshold).
+     */
+    private boolean shouldTargetCommandInput() {
+        EditText commandInput = mActivity.getCommandInput();
+        if (commandInput == null) return false;
+        if (commandInput.hasFocus()) return true;
+        // If focus was lost very recently, it was likely stolen by the extra key button
+        long elapsed = SystemClock.elapsedRealtime() - mCommandInputFocusLostTime;
+        return elapsed < FOCUS_LOST_THRESHOLD_MS;
+    }
+
+    /**
+     * Dispatch a key event to the command input EditText.
+     */
+    private void dispatchKeyToCommandInput(String key, boolean ctrlDown, boolean altDown, boolean shiftDown, boolean fnDown) {
+        EditText commandInput = mActivity.getCommandInput();
+        if (commandInput == null) return;
+
+        // Re-focus the command input so cursor stays visible
+        commandInput.requestFocus();
+
+        if ("ENTER".equals(key)) {
+            // ENTER in command input sends the text to the terminal
+            mActivity.sendCommandInput();
+            return;
+        }
+
+        if (PRIMARY_KEY_CODES_FOR_STRINGS.containsKey(key)) {
+            Integer keyCode = PRIMARY_KEY_CODES_FOR_STRINGS.get(key);
+            if (keyCode == null) return;
+            int metaState = 0;
+            if (ctrlDown) metaState |= KeyEvent.META_CTRL_ON | KeyEvent.META_CTRL_LEFT_ON;
+            if (altDown) metaState |= KeyEvent.META_ALT_ON | KeyEvent.META_ALT_LEFT_ON;
+            if (shiftDown) metaState |= KeyEvent.META_SHIFT_ON | KeyEvent.META_SHIFT_LEFT_ON;
+            if (fnDown) metaState |= KeyEvent.META_FUNCTION_ON;
+
+            KeyEvent downEvent = new KeyEvent(0, 0, KeyEvent.ACTION_DOWN, keyCode, 0, metaState);
+            KeyEvent upEvent = new KeyEvent(0, 0, KeyEvent.ACTION_UP, keyCode, 0, metaState);
+            commandInput.dispatchKeyEvent(downEvent);
+            commandInput.dispatchKeyEvent(upEvent);
+        } else {
+            // Regular text character - insert at cursor
+            int start = Math.max(commandInput.getSelectionStart(), 0);
+            int end = Math.max(commandInput.getSelectionEnd(), 0);
+            commandInput.getText().replace(Math.min(start, end), Math.max(start, end), key);
+        }
+    }
+
     @SuppressLint("RtlHardcoded")
     @Override
     public void onTerminalExtraKeyButtonClick(View view, String key, boolean ctrlDown, boolean altDown, boolean shiftDown, boolean fnDown) {
@@ -102,6 +169,8 @@ public class TermuxTerminalExtraKeys extends TerminalExtraKeys {
             TerminalView terminalView = mTermuxTerminalViewClient.getActivity().getTerminalView();
             if (terminalView != null && terminalView.mEmulator != null)
                 terminalView.mEmulator.toggleAutoScrollDisabled();
+        } else if (shouldTargetCommandInput()) {
+            dispatchKeyToCommandInput(key, ctrlDown, altDown, shiftDown, fnDown);
         } else {
             super.onTerminalExtraKeyButtonClick(view, key, ctrlDown, altDown, shiftDown, fnDown);
         }

@@ -607,18 +607,22 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
         mCommandInput = findViewById(R.id.chat_input_edittext);
         ImageButton sendButton = findViewById(R.id.chat_send_button);
 
-        sendButton.setOnClickListener(v -> {
-            String text = mCommandInput.getText().toString().trim();
-            if (text.isEmpty()) return;
+        sendButton.setOnClickListener(v -> sendCommandInput());
+    }
 
-            TerminalSession session = getCurrentSession();
-            if (session != null) {
-                session.write(text + "\r");
-                mCommandInput.setText("");
-            } else {
-                Toast.makeText(TermuxActivity.this, "No active terminal session", Toast.LENGTH_SHORT).show();
-            }
-        });
+    /** Send the text in the command input to the terminal session and clear it. */
+    public void sendCommandInput() {
+        if (mCommandInput == null) return;
+        String text = mCommandInput.getText().toString().trim();
+        if (text.isEmpty()) return;
+
+        TerminalSession session = getCurrentSession();
+        if (session != null) {
+            session.write(text + "\r");
+            mCommandInput.setText("");
+        } else {
+            Toast.makeText(TermuxActivity.this, "No active terminal session", Toast.LENGTH_SHORT).show();
+        }
     }
 
 
@@ -946,6 +950,10 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
 
     public TerminalView getTerminalView() {
         return mTerminalView;
+    }
+
+    public EditText getCommandInput() {
+        return mCommandInput;
     }
 
     public TermuxTerminalViewClient getTermuxTerminalViewClient() {
