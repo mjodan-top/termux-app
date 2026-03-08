@@ -102,6 +102,9 @@ public final class TermuxService extends Service implements AppShell.AppShellCli
     private PowerManager.WakeLock mWakeLock;
     private WifiManager.WifiLock mWifiLock;
 
+    /** Whether the WakeLock was auto-acquired (due to active sessions) vs manually by user. */
+    private boolean mIsWakeLockAutoAcquired = false;
+
     /** If the user has executed the {@link TERMUX_SERVICE#ACTION_STOP_SERVICE} intent. */
     boolean mWantsToStop = false;
 
@@ -119,8 +122,9 @@ public final class TermuxService extends Service implements AppShell.AppShellCli
 
         runStartForeground();
 
-        // Auto-acquire WakeLock to prevent background disconnections
-        actionAcquireWakeLock();
+        // WakeLock is auto-acquired when terminal sessions are created and auto-released
+        // when all sessions exit. This prevents SSH disconnections when app goes to background.
+        // It can also be manually toggled via the notification button.
 
         SystemEventReceiver.registerPackageUpdateEvents(this);
     }
@@ -307,11 +311,16 @@ public final class TermuxService extends Service implements AppShell.AppShellCli
     @SuppressLint({"WakelockTimeout", "BatteryLife"})
     private void actionAcquireWakeLock() {
         if (mWakeLock != null) {
-            Logger.logDebug(LOG_TAG, "Ignoring acquiring WakeLocks since they are already held");
+            // User manually acquiring overrides auto-acquired state
+            mIsWakeLockAutoAcquired = false;
+            Logger.logDebug(LOG_TAG, "WakeLocks already held, marking as manually acquired");
             return;
         }
 
         Logger.logDebug(LOG_TAG, "Acquiring WakeLocks");
+
+        // User manually acquiring, clear auto flag
+        mIsWakeLockAutoAcquired = false;
 
         PowerManager pm = (PowerManager) getSystemService(Context.POWER_SERVICE);
         mWakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, TermuxConstants.TERMUX_APP_NAME.toLowerCase() + ":service-wakelock");
@@ -319,7 +328,7 @@ public final class TermuxService extends Service implements AppShell.AppShellCli
 
         // http://tools.android.com/tech-docs/lint-in-studio-2-3#TOC-WifiManager-Leak
         WifiManager wm = (WifiManager) getApplicationContext().getSystemService(Context.WIFI_SERVICE);
-        mWifiLock = wm.createWifiLock(WifiManager.WIFI_MODE_FULL_HIGH_PERF, TermuxConstants.TERMUX_APP_NAME.toLowerCase());
+        mWifiLock = wm.createWifiLock(WifiManager.WIFI_MODE_FULL, TermuxConstants.TERMUX_APP_NAME.toLowerCase());
         mWifiLock.acquire();
 
         if (!PermissionUtils.checkIfBatteryOptimizationsDisabled(this)) {
@@ -341,6 +350,8 @@ public final class TermuxService extends Service implements AppShell.AppShellCli
 
         Logger.logDebug(LOG_TAG, "Releasing WakeLocks");
 
+        mIsWakeLockAutoAcquired = false;
+
         if (mWakeLock != null) {
             mWakeLock.release();
             mWakeLock = null;
@@ -355,6 +366,36 @@ public final class TermuxService extends Service implements AppShell.AppShellCli
             updateNotification();
 
         Logger.logDebug(LOG_TAG, "WakeLocks released successfully");
+    }
+
+    /** Auto-acquire WakeLock when terminal sessions are active to prevent SSH disconnections. */
+    @SuppressLint({"WakelockTimeout", "BatteryLife"})
+    private void autoAcquireWakeLockIfNeeded() {
+        if (mWakeLock != null) return; // Already held (auto or manual)
+
+        Logger.logDebug(LOG_TAG, "Auto-acquiring WakeLocks for active session");
+
+        mIsWakeLockAutoAcquired = true;
+
+        PowerManager pm = (PowerManager) getSystemService(Context.POWER_SERVICE);
+        mWakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, TermuxConstants.TERMUX_APP_NAME.toLowerCase() + ":service-wakelock");
+        mWakeLock.acquire();
+
+        WifiManager wm = (WifiManager) getApplicationContext().getSystemService(Context.WIFI_SERVICE);
+        mWifiLock = wm.createWifiLock(WifiManager.WIFI_MODE_FULL, TermuxConstants.TERMUX_APP_NAME.toLowerCase());
+        mWifiLock.acquire();
+
+        Logger.logDebug(LOG_TAG, "WakeLocks auto-acquired successfully");
+    }
+
+    /** Auto-release WakeLock when no more terminal sessions are active. */
+    private void autoReleaseWakeLockIfNeeded() {
+        // Only auto-release if it was auto-acquired and no sessions remain
+        if (!mIsWakeLockAutoAcquired) return;
+        if (!mShellManager.mTermuxSessions.isEmpty()) return;
+
+        Logger.logDebug(LOG_TAG, "Auto-releasing WakeLocks since no sessions remain");
+        actionReleaseWakeLock(false);
     }
 
     /** Process {@link TERMUX_SERVICE#ACTION_SERVICE_EXECUTE} intent to execute a shell command in
@@ -610,6 +651,10 @@ public final class TermuxService extends Service implements AppShell.AppShellCli
 
         mShellManager.mTermuxSessions.add(newTermuxSession);
 
+        // Auto-acquire WakeLock when first session is created to prevent SSH disconnections
+        // when app goes to background and CPU sleeps
+        autoAcquireWakeLockIfNeeded();
+
         // Remove the execution command from the pending plugin execution commands list since it has
         // now been processed
         if (executionCommand.isPluginExecutionCommand)
@@ -651,6 +696,9 @@ public final class TermuxService extends Service implements AppShell.AppShellCli
                 TermuxPluginUtils.processPluginExecutionCommandResult(this, LOG_TAG, executionCommand);
 
             mShellManager.mTermuxSessions.remove(termuxSession);
+
+            // Auto-release WakeLock when all sessions are gone
+            autoReleaseWakeLockIfNeeded();
 
             // Notify {@link TermuxSessionsListViewController} that sessions list has been updated if
             // activity in is foreground
