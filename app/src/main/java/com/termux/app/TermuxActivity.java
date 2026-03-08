@@ -9,9 +9,13 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
 import android.content.ServiceConnection;
+import android.database.Cursor;
 import android.net.Uri;
 import android.os.Bundle;
+import android.os.Handler;
 import android.os.IBinder;
+import android.provider.OpenableColumns;
+import android.util.Base64;
 import android.view.ContextMenu;
 import android.view.ContextMenu.ContextMenuInfo;
 import android.view.Gravity;
@@ -65,6 +69,8 @@ import androidx.appcompat.app.AppCompatActivity;
 import androidx.drawerlayout.widget.DrawerLayout;
 import androidx.viewpager.widget.ViewPager;
 
+import java.io.ByteArrayOutputStream;
+import java.io.InputStream;
 import java.util.Arrays;
 
 /**
@@ -195,6 +201,9 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
     private static final int CONTEXT_MENU_RECONNECT_ID = 15;
     private static final int CONTEXT_MENU_BACKUP_ID = 12;
     private static final int CONTEXT_MENU_RESTORE_ID = 13;
+    private static final int CONTEXT_MENU_UPLOAD_IMAGE_ID = 16;
+
+    private static final int REQUEST_PICK_IMAGE = 1001;
 
     private static final String ARG_TERMINAL_TOOLBAR_TEXT_INPUT = "terminal_toolbar_text_input";
     private static final String ARG_ACTIVITY_RECREATED = "activity_recreated";
@@ -664,6 +673,7 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
         menu.add(Menu.NONE, CONTEXT_MENU_SHARE_TRANSCRIPT_ID, Menu.NONE, R.string.action_share_transcript);
         if (!DataUtils.isNullOrEmpty(mTerminalView.getStoredSelectedText()))
             menu.add(Menu.NONE, CONTEXT_MENU_SHARE_SELECTED_TEXT, Menu.NONE, R.string.action_share_selected_text);
+        menu.add(Menu.NONE, CONTEXT_MENU_UPLOAD_IMAGE_ID, Menu.NONE, "Upload image");
         menu.add(Menu.NONE, CONTEXT_MENU_RECONNECT_ID, Menu.NONE, "Reconnect SSH");
         menu.add(Menu.NONE, CONTEXT_MENU_RENAME_SESSION_ID, Menu.NONE, "Rename session");
         menu.add(Menu.NONE, CONTEXT_MENU_RESET_TERMINAL_ID, Menu.NONE, R.string.action_reset_terminal);
@@ -696,6 +706,9 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
                 mTermuxTerminalViewClient.shareSelectedText();
                 return true;
 
+            case CONTEXT_MENU_UPLOAD_IMAGE_ID:
+                pickImageForUpload();
+                return true;
             case CONTEXT_MENU_RECONNECT_ID:
                 if (session != null) {
                     // Run ts function to reconnect last SSH + tmux
@@ -867,7 +880,93 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
         Logger.logVerbose(LOG_TAG, "onActivityResult: requestCode: " + requestCode + ", resultCode: "  + resultCode + ", data: "  + IntentUtils.getIntentString(data));
         if (requestCode == PermissionUtils.REQUEST_GRANT_STORAGE_PERMISSION) {
             requestStoragePermission(true);
+        } else if (requestCode == REQUEST_PICK_IMAGE && resultCode == RESULT_OK && data != null) {
+            Uri imageUri = data.getData();
+            if (imageUri != null) {
+                uploadImageViaBase64(imageUri);
+            }
         }
+    }
+
+    private void pickImageForUpload() {
+        Intent intent = new Intent(Intent.ACTION_GET_CONTENT);
+        intent.setType("image/*");
+        intent.addCategory(Intent.CATEGORY_OPENABLE);
+        try {
+            startActivityForResult(Intent.createChooser(intent, "Select image to upload"), REQUEST_PICK_IMAGE);
+        } catch (ActivityNotFoundException e) {
+            showToast("No file picker available", false);
+        }
+    }
+
+    private String getFileNameFromUri(Uri uri) {
+        String name = null;
+        try (Cursor cursor = getContentResolver().query(uri, null, null, null, null)) {
+            if (cursor != null && cursor.moveToFirst()) {
+                int idx = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME);
+                if (idx >= 0) name = cursor.getString(idx);
+            }
+        }
+        if (name == null) {
+            name = "upload_" + System.currentTimeMillis() + ".png";
+        }
+        return name;
+    }
+
+    private void uploadImageViaBase64(Uri uri) {
+        TerminalSession session = getCurrentSession();
+        if (session == null) {
+            showToast("No active session", false);
+            return;
+        }
+
+        new Thread(() -> {
+            try {
+                String fileName = getFileNameFromUri(uri);
+                InputStream is = getContentResolver().openInputStream(uri);
+                if (is == null) {
+                    runOnUiThread(() -> showToast("Cannot read image", false));
+                    return;
+                }
+
+                ByteArrayOutputStream baos = new ByteArrayOutputStream();
+                byte[] buf = new byte[8192];
+                int len;
+                while ((len = is.read(buf)) != -1) {
+                    baos.write(buf, 0, len);
+                }
+                is.close();
+
+                String base64Data = Base64.encodeToString(baos.toByteArray(), Base64.NO_WRAP);
+                int totalSize = base64Data.length();
+
+                // Write the decode command
+                session.write("base64 -d > ~/" + fileName + " << 'TERMUX_UPLOAD_EOF'\n");
+
+                // Send base64 data in chunks to avoid terminal buffer overflow
+                int chunkSize = 4096;
+                Handler handler = new Handler(getMainLooper());
+                for (int i = 0; i < totalSize; i += chunkSize) {
+                    int end = Math.min(i + chunkSize, totalSize);
+                    String chunk = base64Data.substring(i, end) + "\n";
+                    // Delay each chunk to let the terminal process it
+                    final String c = chunk;
+                    long delay = (long)(i / chunkSize) * 50;
+                    handler.postDelayed(() -> session.write(c), delay);
+                }
+
+                // Send EOF marker after all chunks
+                long finalDelay = (long)((totalSize / chunkSize) + 1) * 50;
+                handler.postDelayed(() -> {
+                    session.write("TERMUX_UPLOAD_EOF\n");
+                    runOnUiThread(() -> showToast("Uploaded: " + fileName, true));
+                }, finalDelay);
+
+            } catch (Exception e) {
+                Logger.logError(LOG_TAG, "Failed to upload image: " + e.getMessage());
+                runOnUiThread(() -> showToast("Upload failed: " + e.getMessage(), false));
+            }
+        }).start();
     }
 
     @Override
