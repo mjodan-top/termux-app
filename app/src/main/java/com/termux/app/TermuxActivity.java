@@ -617,6 +617,56 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
         ImageButton sendButton = findViewById(R.id.chat_send_button);
 
         sendButton.setOnClickListener(v -> sendCommandInput());
+
+        // Forward vertical swipes on the input bar to the terminal view for scrolling.
+        // Without this, the multiline EditText consumes vertical scroll gestures.
+        View inputBar = findViewById(R.id.chat_input_bar);
+        View.OnTouchListener verticalSwipeForwarder = new View.OnTouchListener() {
+            private float startY;
+            private boolean forwarding;
+            private static final int TOUCH_SLOP = 24;
+
+            @SuppressLint("ClickableViewAccessibility")
+            @Override
+            public boolean onTouch(View v, android.view.MotionEvent event) {
+                switch (event.getActionMasked()) {
+                    case android.view.MotionEvent.ACTION_DOWN:
+                        startY = event.getRawY();
+                        forwarding = false;
+                        break;
+                    case android.view.MotionEvent.ACTION_MOVE:
+                        if (!forwarding && Math.abs(event.getRawY() - startY) > TOUCH_SLOP) {
+                            forwarding = true;
+                            // Cancel the touch on the EditText
+                            android.view.MotionEvent cancel = android.view.MotionEvent.obtain(event);
+                            cancel.setAction(android.view.MotionEvent.ACTION_CANCEL);
+                            v.onTouchEvent(cancel);
+                            cancel.recycle();
+                            // Send a synthetic DOWN to the terminal view
+                            android.view.MotionEvent down = android.view.MotionEvent.obtain(event);
+                            down.setAction(android.view.MotionEvent.ACTION_DOWN);
+                            mTerminalView.onTouchEvent(down);
+                            down.recycle();
+                        }
+                        if (forwarding) {
+                            mTerminalView.onTouchEvent(event);
+                            return true;
+                        }
+                        break;
+                    case android.view.MotionEvent.ACTION_UP:
+                    case android.view.MotionEvent.ACTION_CANCEL:
+                        if (forwarding) {
+                            mTerminalView.onTouchEvent(event);
+                            forwarding = false;
+                            return true;
+                        }
+                        forwarding = false;
+                        break;
+                }
+                return false;
+            }
+        };
+        mCommandInput.setOnTouchListener(verticalSwipeForwarder);
     }
 
     /** Send the text in the command input to the terminal session and clear it. */
@@ -889,11 +939,9 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
     }
 
     private void pickImageForUpload() {
-        Intent intent = new Intent(Intent.ACTION_GET_CONTENT);
-        intent.setType("image/*");
-        intent.addCategory(Intent.CATEGORY_OPENABLE);
+        Intent intent = new Intent(Intent.ACTION_PICK, android.provider.MediaStore.Images.Media.EXTERNAL_CONTENT_URI);
         try {
-            startActivityForResult(Intent.createChooser(intent, "Select image to upload"), REQUEST_PICK_IMAGE);
+            startActivityForResult(intent, REQUEST_PICK_IMAGE);
         } catch (ActivityNotFoundException e) {
             showToast("No file picker available", false);
         }
