@@ -448,7 +448,6 @@ public final class TerminalView extends View {
 
         int rowsInHistory = mEmulator.getScreen().getActiveTranscriptRows();
         if (mTopRow < -rowsInHistory) mTopRow = -rowsInHistory;
-
         if (isSelectingText() || mEmulator.isAutoScrollDisabled()) {
 
             // Do not scroll when selecting text.
@@ -596,6 +595,10 @@ public final class TerminalView extends View {
     public boolean onTouchEvent(MotionEvent event) {
         if (mEmulator == null) return true;
         final int action = event.getAction();
+
+        if (action == MotionEvent.ACTION_DOWN && !hasFocus()) {
+            requestFocus();
+        }
 
         if (isSelectingText()) {
             updateFloatingToolbarVisibility(event);
