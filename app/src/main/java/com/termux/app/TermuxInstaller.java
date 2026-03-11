@@ -385,8 +385,8 @@ final class TermuxInstaller {
                     "# Auto-install openssh and configure SSH keepalive on first login\n" +
                     "MARKER=\"$HOME/.termux/.packages-installed\"\n" +
                     "if [ ! -f \"$MARKER\" ]; then\n" +
-                    "    echo \"[Termux] Installing openssh...\"\n" +
-                    "    pkg install -y openssh > /dev/null 2>&1\n" +
+                    "    echo \"[Termux] Installing openssh, mosh...\"\n" +
+                    "    pkg install -y openssh mosh > /dev/null 2>&1\n" +
                     "    if [ $? -eq 0 ]; then\n" +
                     "        mkdir -p \"$HOME/.termux\" \"$HOME/.ssh\"\n" +
                     "        touch \"$MARKER\"\n" +
@@ -397,7 +397,7 @@ final class TermuxInstaller {
                     "        fi\n" +
                     "        echo \"[Termux] Done.\"\n" +
                     "    else\n" +
-                    "        echo \"[Termux] Package install failed. Run manually: pkg install openssh\"\n" +
+                    "        echo \"[Termux] Package install failed. Run manually: pkg install openssh mosh\"\n" +
                     "    fi\n" +
                     "fi\n" +
                     "\n# ts - SSH + auto tmux attach, saves last connection for quick reconnect\n" +
@@ -414,7 +414,9 @@ final class TermuxInstaller {
                     "        return 1\n" +
                     "    fi\n" +
                     "    ssh \"$@\" -t 'tmux attach || tmux new'\n" +
-                    "}\n";
+                    "}\n" +
+                    "\n# mosh with server path for macOS homebrew hosts\n" +
+                    "alias mosh='mosh --server=/opt/homebrew/bin/mosh-server'\n";
                 try (FileOutputStream fos = new FileOutputStream(profileFile)) {
                     fos.write(script.getBytes());
                 }
