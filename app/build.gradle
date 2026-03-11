@@ -50,6 +50,7 @@ android {
         validateVersionName(versionName)
 
         buildConfigField "String", "TERMUX_PACKAGE_VARIANT", "\"" + project.ext.packageVariant + "\"" // Used by TermuxApplication class
+        buildConfigField "String", "BUILD_ID", "\"" + new java.text.SimpleDateFormat("MMdd.HHmm").format(new Date()) + "\""
 
         manifestPlaceholders.TERMUX_PACKAGE_NAME = "com.termux"
         manifestPlaceholders.TERMUX_APP_NAME = "Termux"

@@ -1,5 +1,6 @@
 package com.termux.app;
 
+import com.termux.BuildConfig;
 import android.annotation.SuppressLint;
 import android.app.AlertDialog;
 import android.content.ActivityNotFoundException;
@@ -12,6 +13,7 @@ import android.content.ServiceConnection;
 import android.database.Cursor;
 import android.net.Uri;
 import android.os.Bundle;
+import android.os.Environment;
 import android.os.Handler;
 import android.os.IBinder;
 import android.provider.OpenableColumns;
@@ -719,6 +721,7 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
         TerminalSession currentSession = getCurrentSession();
         if (currentSession == null) return;
 
+        menu.setHeaderTitle("Termux b" + BuildConfig.BUILD_ID);
         menu.add(Menu.NONE, CONTEXT_MENU_SELECT_URL_ID, Menu.NONE, R.string.action_select_url);
         menu.add(Menu.NONE, CONTEXT_MENU_SHARE_TRANSCRIPT_ID, Menu.NONE, R.string.action_share_transcript);
         if (!DataUtils.isNullOrEmpty(mTerminalView.getStoredSelectedText()))
@@ -846,17 +849,30 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
                 .setNegativeButton(android.R.string.cancel, null).show();
         }
     }
-    private static final String BACKUP_DIR = "/sdcard/termux-backup";
+    private String getBackupDir() {
+        return Environment.getExternalStorageDirectory().getAbsolutePath() + "/termux-backup";
+    }
+
+    private boolean ensureStoragePermission() {
+        if (PermissionUtils.checkStoragePermission(this, false)) {
+            return true;
+        }
+        requestStoragePermission(false);
+        return false;
+    }
 
     private void performBackup() {
         TerminalSession session = getCurrentSession();
         if (session == null) return;
 
+        if (!ensureStoragePermission()) return;
+
+        String backupDir = getBackupDir();
         String script =
-            "mkdir -p " + BACKUP_DIR + " && " +
-            "tar czf " + BACKUP_DIR + "/home.tar.gz -C /data/data/com.termux/files home && " +
-            "dpkg --get-selections > " + BACKUP_DIR + "/packages.txt && " +
-            "echo '[Backup] Done => " + BACKUP_DIR + "/'";
+            "mkdir -p " + backupDir + " && " +
+            "tar czf " + backupDir + "/home.tar.gz -C /data/data/com.termux/files home && " +
+            "dpkg --get-selections > " + backupDir + "/packages.txt && " +
+            "echo '[Backup] Done => " + backupDir + "/'";
         session.write(script + "\r");
     }
 
@@ -864,16 +880,19 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
         TerminalSession session = getCurrentSession();
         if (session == null) return;
 
+        if (!ensureStoragePermission()) return;
+
+        String backupDir = getBackupDir();
         new AlertDialog.Builder(this)
             .setTitle("Restore")
-            .setMessage("Restore from /sdcard/termux-backup/ ? This will overwrite current configs.")
+            .setMessage("Restore from " + backupDir + "/ ? This will overwrite current configs.")
             .setPositiveButton(android.R.string.yes, (dialog, which) -> {
                 String script =
-                    "if [ -f " + BACKUP_DIR + "/home.tar.gz ]; then " +
-                    "tar xzf " + BACKUP_DIR + "/home.tar.gz -C /data/data/com.termux/files && " +
+                    "if [ -f " + backupDir + "/home.tar.gz ]; then " +
+                    "tar xzf " + backupDir + "/home.tar.gz -C /data/data/com.termux/files && " +
                     "echo '[Restore] Home restored.'; fi && " +
-                    "if [ -f " + BACKUP_DIR + "/packages.txt ]; then " +
-                    "dpkg --set-selections < " + BACKUP_DIR + "/packages.txt && " +
+                    "if [ -f " + backupDir + "/packages.txt ]; then " +
+                    "dpkg --set-selections < " + backupDir + "/packages.txt && " +
                     "apt-get -y dselect-upgrade > /dev/null 2>&1 && " +
                     "echo '[Restore] Packages restored.'; fi && " +
                     "echo '[Restore] Done.'";
