@@ -297,6 +297,12 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
         // Send the {@link TermuxConstants#BROADCAST_TERMUX_OPENED} broadcast to notify apps that Termux
         // app has been opened.
         TermuxUtils.sendTermuxOpenedBroadcast(this);
+
+        // Request battery optimization exemption to prevent OS from killing network connections
+        // when app is in background (critical for SSH sessions on aggressive OEM ROMs like ColorOS)
+        if (!PermissionUtils.checkIfBatteryOptimizationsDisabled(this)) {
+            PermissionUtils.requestDisableBatteryOptimizations(this);
+        }
     }
 
     @Override
@@ -728,13 +734,14 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
             menu.add(Menu.NONE, CONTEXT_MENU_SHARE_SELECTED_TEXT, Menu.NONE, R.string.action_share_selected_text);
         menu.add(Menu.NONE, CONTEXT_MENU_UPLOAD_IMAGE_ID, Menu.NONE, "Upload image");
         menu.add(Menu.NONE, CONTEXT_MENU_RECONNECT_ID, Menu.NONE, "Reconnect SSH");
-        menu.add(Menu.NONE, CONTEXT_MENU_RENAME_SESSION_ID, Menu.NONE, "Rename session");
+        menu.add(Menu.NONE, CONTEXT_MENU_RENAME_SESSION_ID, Menu.NONE, "Sessions");
         menu.add(Menu.NONE, CONTEXT_MENU_RESET_TERMINAL_ID, Menu.NONE, R.string.action_reset_terminal);
         menu.add(Menu.NONE, CONTEXT_MENU_KILL_PROCESS_ID, Menu.NONE, getResources().getString(R.string.action_kill_process, getCurrentSession().getPid())).setEnabled(currentSession.isRunning());
         menu.add(Menu.NONE, CONTEXT_MENU_TOGGLE_KEEP_SCREEN_ON, Menu.NONE, R.string.action_toggle_keep_screen_on).setCheckable(true).setChecked(mPreferences.shouldKeepScreenOn());
         menu.add(Menu.NONE, CONTEXT_MENU_BACKUP_ID, Menu.NONE, "Backup");
         menu.add(Menu.NONE, CONTEXT_MENU_RESTORE_ID, Menu.NONE, "Restore");
-        menu.add(Menu.NONE, CONTEXT_MENU_SETTINGS_ID, Menu.NONE, R.string.action_open_settings);
+        menu.add(Menu.NONE, CONTEXT_MENU_SETTINGS_ID, Menu.NONE,
+            getString(R.string.action_open_settings) + "  [b" + BuildConfig.BUILD_ID + "]");
     }
 
     /** Hook system menu to show context menu instead. */
@@ -769,7 +776,7 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
                 }
                 return true;
             case CONTEXT_MENU_RENAME_SESSION_ID:
-                mTermuxTerminalSessionActivityClient.renameSession(session);
+                getDrawer().openDrawer(Gravity.LEFT);
                 return true;
             case CONTEXT_MENU_RESET_TERMINAL_ID:
                 if (session != null) {
@@ -854,11 +861,8 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
     }
 
     private boolean ensureStoragePermission() {
-        if (PermissionUtils.checkStoragePermission(this, false)) {
-            return true;
-        }
-        requestStoragePermission(false);
-        return false;
+        return PermissionUtils.checkAndRequestLegacyOrManageExternalStoragePermission(
+            this, PermissionUtils.REQUEST_GRANT_STORAGE_PERMISSION, true);
     }
 
     private void performBackup() {

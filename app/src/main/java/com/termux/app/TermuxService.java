@@ -8,6 +8,13 @@ import android.app.Service;
 import android.content.Context;
 import android.content.Intent;
 import android.content.res.Resources;
+import android.media.AudioAttributes;
+import android.media.AudioFormat;
+import android.media.AudioManager;
+import android.media.AudioTrack;
+import android.media.MediaMetadata;
+import android.media.session.MediaSession;
+import android.media.session.PlaybackState;
 import android.net.wifi.WifiManager;
 import android.os.Binder;
 import android.os.Build;
@@ -104,6 +111,13 @@ public final class TermuxService extends Service implements AppShell.AppShellCli
 
     /** Whether the WakeLock was auto-acquired (due to active sessions) vs manually by user. */
     private boolean mIsWakeLockAutoAcquired = false;
+
+    /** MediaSession used to prevent aggressive OEM ROM process freezing (e.g. ColorOS cgroup freezer). */
+    private MediaSession mMediaSession;
+
+    /** Silent AudioTrack to prevent cgroup freezer from freezing the process. */
+    private AudioTrack mSilentAudioTrack;
+    private Thread mSilentAudioThread;
 
     /** If the user has executed the {@link TERMUX_SERVICE#ACTION_STOP_SERVICE} intent. */
     boolean mWantsToStop = false;
@@ -211,11 +225,102 @@ public final class TermuxService extends Service implements AppShell.AppShellCli
     private void runStartForeground() {
         setupNotificationChannel();
         startForeground(TermuxConstants.TERMUX_APP_NOTIFICATION_ID, buildNotification());
+        startMediaSession();
+        startSilentAudio();
     }
 
     /** Make service leave foreground mode. */
     private void runStopForeground() {
+        stopSilentAudio();
+        stopMediaSession();
         stopForeground(true);
+    }
+
+    /**
+     * Start a MediaSession with active playback state to prevent aggressive OEM ROM
+     * process freezing (e.g. ColorOS/RealmeUI cgroup freezer). OEM ROMs check for
+     * active media sessions before freezing background processes.
+     */
+    private void startMediaSession() {
+        if (mMediaSession != null) return;
+
+        mMediaSession = new MediaSession(this, "TermuxSession");
+        mMediaSession.setMetadata(new MediaMetadata.Builder()
+            .putString(MediaMetadata.METADATA_KEY_TITLE, "Termux")
+            .putLong(MediaMetadata.METADATA_KEY_DURATION, -1)
+            .build());
+        mMediaSession.setPlaybackState(new PlaybackState.Builder()
+            .setState(PlaybackState.STATE_PLAYING, PlaybackState.PLAYBACK_POSITION_UNKNOWN, 0f)
+            .build());
+        mMediaSession.setActive(true);
+
+        Logger.logDebug(LOG_TAG, "MediaSession started for freeze prevention");
+    }
+
+    /** Stop the anti-freeze MediaSession. */
+    private void stopMediaSession() {
+        if (mMediaSession != null) {
+            mMediaSession.setActive(false);
+            mMediaSession.release();
+            mMediaSession = null;
+            Logger.logDebug(LOG_TAG, "MediaSession stopped");
+        }
+    }
+
+    /**
+     * Start playing silent audio to prevent aggressive OEM ROM cgroup freezer.
+     * OEM ROMs (ColorOS, MIUI, etc.) will not freeze processes that hold active audio hardware.
+     */
+    private void startSilentAudio() {
+        if (mSilentAudioTrack != null) return;
+
+        int sampleRate = 8000;
+        int bufferSize = AudioTrack.getMinBufferSize(sampleRate,
+            AudioFormat.CHANNEL_OUT_MONO, AudioFormat.ENCODING_PCM_16BIT);
+
+        mSilentAudioTrack = new AudioTrack.Builder()
+            .setAudioAttributes(new AudioAttributes.Builder()
+                .setUsage(AudioAttributes.USAGE_MEDIA)
+                .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
+                .build())
+            .setAudioFormat(new AudioFormat.Builder()
+                .setSampleRate(sampleRate)
+                .setChannelMask(AudioFormat.CHANNEL_OUT_MONO)
+                .setEncoding(AudioFormat.ENCODING_PCM_16BIT)
+                .build())
+            .setBufferSizeInBytes(bufferSize)
+            .setTransferMode(AudioTrack.MODE_STREAM)
+            .build();
+
+        mSilentAudioTrack.setVolume(0f);
+        mSilentAudioTrack.play();
+
+        byte[] silence = new byte[bufferSize];
+        mSilentAudioThread = new Thread(() -> {
+            while (mSilentAudioTrack != null &&
+                   mSilentAudioTrack.getPlayState() == AudioTrack.PLAYSTATE_PLAYING) {
+                mSilentAudioTrack.write(silence, 0, silence.length);
+                try { Thread.sleep(1000); } catch (InterruptedException e) { break; }
+            }
+        }, "TermuxSilentAudio");
+        mSilentAudioThread.setDaemon(true);
+        mSilentAudioThread.start();
+
+        Logger.logDebug(LOG_TAG, "Silent audio started for freeze prevention");
+    }
+
+    /** Stop silent audio playback. */
+    private void stopSilentAudio() {
+        if (mSilentAudioTrack != null) {
+            mSilentAudioTrack.stop();
+            mSilentAudioTrack.release();
+            mSilentAudioTrack = null;
+        }
+        if (mSilentAudioThread != null) {
+            mSilentAudioThread.interrupt();
+            mSilentAudioThread = null;
+        }
+        Logger.logDebug(LOG_TAG, "Silent audio stopped");
     }
 
     /** Request to stop service. */
@@ -328,7 +433,7 @@ public final class TermuxService extends Service implements AppShell.AppShellCli
 
         // http://tools.android.com/tech-docs/lint-in-studio-2-3#TOC-WifiManager-Leak
         WifiManager wm = (WifiManager) getApplicationContext().getSystemService(Context.WIFI_SERVICE);
-        mWifiLock = wm.createWifiLock(WifiManager.WIFI_MODE_FULL, TermuxConstants.TERMUX_APP_NAME.toLowerCase());
+        mWifiLock = wm.createWifiLock(WifiManager.WIFI_MODE_FULL_HIGH_PERF, TermuxConstants.TERMUX_APP_NAME.toLowerCase());
         mWifiLock.acquire();
 
         if (!PermissionUtils.checkIfBatteryOptimizationsDisabled(this)) {
@@ -382,7 +487,7 @@ public final class TermuxService extends Service implements AppShell.AppShellCli
         mWakeLock.acquire();
 
         WifiManager wm = (WifiManager) getApplicationContext().getSystemService(Context.WIFI_SERVICE);
-        mWifiLock = wm.createWifiLock(WifiManager.WIFI_MODE_FULL, TermuxConstants.TERMUX_APP_NAME.toLowerCase());
+        mWifiLock = wm.createWifiLock(WifiManager.WIFI_MODE_FULL_HIGH_PERF, TermuxConstants.TERMUX_APP_NAME.toLowerCase());
         mWifiLock.acquire();
 
         Logger.logDebug(LOG_TAG, "WakeLocks auto-acquired successfully");
