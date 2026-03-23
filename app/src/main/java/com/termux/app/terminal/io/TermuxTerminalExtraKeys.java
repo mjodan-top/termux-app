@@ -14,6 +14,7 @@ import com.termux.app.TermuxActivity;
 import com.termux.app.terminal.TermuxTerminalSessionActivityClient;
 import com.termux.app.terminal.TermuxTerminalViewClient;
 import com.termux.shared.logger.Logger;
+import com.termux.shared.view.KeyboardUtils;
 import com.termux.shared.termux.extrakeys.ExtraKeysConstants;
 import com.termux.shared.termux.extrakeys.ExtraKeysInfo;
 import com.termux.shared.termux.settings.properties.TermuxPropertyConstants;
@@ -160,6 +161,11 @@ public class TermuxTerminalExtraKeys extends TerminalExtraKeys {
                 drawerLayout.closeDrawer(Gravity.LEFT);
             else
                 drawerLayout.openDrawer(Gravity.LEFT);
+        } else if ("TAB".equals(key)) {
+            mTermuxTerminalSessionActivityClient.switchToNextSessionSorted();
+        } else if ("KEYBOARD_TAB".equals(key)) {
+            // Send real Tab keypress to terminal
+            super.onTerminalExtraKeyButtonClick(view, "TAB", ctrlDown, altDown, shiftDown, fnDown);
         } else if ("PASTE".equals(key)) {
             if(mTermuxTerminalSessionActivityClient != null)
                 mTermuxTerminalSessionActivityClient.onPasteTextFromClipboard(null);
@@ -169,6 +175,9 @@ public class TermuxTerminalExtraKeys extends TerminalExtraKeys {
             TerminalView terminalView = mTermuxTerminalViewClient.getActivity().getTerminalView();
             if (terminalView != null && terminalView.mEmulator != null)
                 terminalView.mEmulator.toggleAutoScrollDisabled();
+        } else if ("IME".equals(key)) {
+            // Toggle soft keyboard without changing terminal focus
+            KeyboardUtils.toggleSoftKeyboard(mActivity);
         } else if (shouldTargetCommandInput()) {
             dispatchKeyToCommandInput(key, ctrlDown, altDown, shiftDown, fnDown);
         } else {

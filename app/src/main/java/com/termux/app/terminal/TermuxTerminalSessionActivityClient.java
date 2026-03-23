@@ -35,6 +35,9 @@ import com.termux.terminal.TextStyle;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.InputStream;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
 import java.util.Properties;
 
 /** The {@link TerminalSessionClient} implementation that may require an {@link Activity} for its interface methods. */
@@ -42,7 +45,7 @@ public class TermuxTerminalSessionActivityClient extends TermuxTerminalSessionCl
 
     private final TermuxActivity mActivity;
 
-    private static final int MAX_SESSIONS = 8;
+    private static final int MAX_SESSIONS = 16;
 
     private SoundPool mBellSoundPool;
 
@@ -338,6 +341,35 @@ public class TermuxTerminalSessionActivityClient extends TermuxTerminalSessionCl
         TermuxSession termuxSession = service.getTermuxSession(index);
         if (termuxSession != null)
             setCurrentSession(termuxSession.getTerminalSession());
+    }
+
+    public void switchToNextSessionSorted() {
+        TermuxService service = mActivity.getTermuxService();
+        if (service == null) return;
+
+        List<TermuxSession> sessions = service.getTermuxSessions();
+        if (sessions.isEmpty()) return;
+
+        List<TermuxSession> sorted = new ArrayList<>(sessions);
+        Collections.sort(sorted, (a, b) -> {
+            String nameA = a.getTerminalSession().mSessionName;
+            String nameB = b.getTerminalSession().mSessionName;
+            if (nameA == null) nameA = "";
+            if (nameB == null) nameB = "";
+            return nameA.compareToIgnoreCase(nameB);
+        });
+
+        TerminalSession current = mActivity.getCurrentSession();
+        int currentIndex = -1;
+        for (int i = 0; i < sorted.size(); i++) {
+            if (sorted.get(i).getTerminalSession() == current) {
+                currentIndex = i;
+                break;
+            }
+        }
+
+        int nextIndex = (currentIndex + 1) % sorted.size();
+        setCurrentSession(sorted.get(nextIndex).getTerminalSession());
     }
 
     @SuppressLint("InflateParams")

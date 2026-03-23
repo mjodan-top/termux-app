@@ -50,6 +50,7 @@ import com.termux.app.activities.SettingsActivity;
 import com.termux.shared.termux.crash.TermuxCrashUtils;
 import com.termux.shared.termux.settings.preferences.TermuxAppSharedPreferences;
 import com.termux.app.terminal.TermuxSessionsListViewController;
+import com.termux.shared.termux.shell.command.runner.terminal.TermuxSession;
 import com.termux.app.terminal.io.TerminalToolbarViewPager;
 import com.termux.app.terminal.TermuxTerminalViewClient;
 import com.termux.shared.termux.extrakeys.ExtraKeysView;
@@ -74,6 +75,8 @@ import androidx.viewpager.widget.ViewPager;
 import java.io.ByteArrayOutputStream;
 import java.io.InputStream;
 import java.util.Arrays;
+import java.util.Collections;
+import java.util.List;
 
 /**
  * A terminal emulator activity.
@@ -204,6 +207,7 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
     private static final int CONTEXT_MENU_BACKUP_ID = 12;
     private static final int CONTEXT_MENU_RESTORE_ID = 13;
     private static final int CONTEXT_MENU_UPLOAD_IMAGE_ID = 16;
+    private static final int CONTEXT_MENU_SORT_SESSIONS_ID = 17;
 
     private static final int REQUEST_PICK_IMAGE = 1001;
 
@@ -735,6 +739,7 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
         menu.add(Menu.NONE, CONTEXT_MENU_UPLOAD_IMAGE_ID, Menu.NONE, "Upload image");
         menu.add(Menu.NONE, CONTEXT_MENU_RECONNECT_ID, Menu.NONE, "Reconnect SSH");
         menu.add(Menu.NONE, CONTEXT_MENU_RENAME_SESSION_ID, Menu.NONE, "Sessions");
+        menu.add(Menu.NONE, CONTEXT_MENU_SORT_SESSIONS_ID, Menu.NONE, "Sort sessions");
         menu.add(Menu.NONE, CONTEXT_MENU_RESET_TERMINAL_ID, Menu.NONE, R.string.action_reset_terminal);
         menu.add(Menu.NONE, CONTEXT_MENU_KILL_PROCESS_ID, Menu.NONE, getResources().getString(R.string.action_kill_process, getCurrentSession().getPid())).setEnabled(currentSession.isRunning());
         menu.add(Menu.NONE, CONTEXT_MENU_TOGGLE_KEEP_SCREEN_ON, Menu.NONE, R.string.action_toggle_keep_screen_on).setCheckable(true).setChecked(mPreferences.shouldKeepScreenOn());
@@ -789,6 +794,9 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
                 showKillSessionDialog(session);
                 return true;
 
+            case CONTEXT_MENU_SORT_SESSIONS_ID:
+                sortSessionsByName();
+                return true;
             case CONTEXT_MENU_TOGGLE_KEEP_SCREEN_ON:
                 toggleKeepScreenOn();
                 return true;
@@ -812,6 +820,25 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
         super.onContextMenuClosed(menu);
         // onContextMenuClosed() is triggered twice if back button is pressed to dismiss instead of tap for some reason
         mTerminalView.onContextMenuClosed(menu);
+    }
+
+    private void sortSessionsByName() {
+        TermuxService service = mTermuxService;
+        if (service == null) return;
+
+        List<TermuxSession> sessions = service.getTermuxSessions();
+        Collections.sort(sessions, (a, b) -> {
+            String nameA = a.getTerminalSession().mSessionName;
+            String nameB = b.getTerminalSession().mSessionName;
+            if (nameA == null) nameA = "";
+            if (nameB == null) nameB = "";
+            return nameA.compareToIgnoreCase(nameB);
+        });
+        termuxSessionListNotifyUpdated();
+        TerminalSession currentSession = getCurrentSession();
+        if (currentSession != null) {
+            mTermuxTerminalSessionActivityClient.checkAndScrollToSession(currentSession);
+        }
     }
 
     private void showKillSessionDialog(TerminalSession session) {
